@@ -1,402 +1,612 @@
-let articles = [];
-let bookmarks = JSON.parse(localStorage.getItem('sg_bookmarks')) || [];
-let currentArticleId = null;
-let currentFilter = 'Barchasi';
+let allArticles = [];
+let adminToken = localStorage.getItem('admin_token') || null;
 
-// 1. BACKEND API DANI DATA OLISH
-async function fetchArticles() {
-  try {
-    const res = await fetch('/api/articles');
-    articles = await res.json();
-    renderArticles();
-  } catch (err) {
-    showToast("Ma'lumotlarni yuklashda xatolik yuz berdi", "error");
-  }
-}
+document.addEventListener('DOMContentLoaded', () => {
+    const homeView = document.getElementById('home-view');
+    const adminView = document.getElementById('admin-view');
+    const searchFilterBar = document.getElementById('search-filter-bar');
+    const goHomeBtn = document.getElementById('go-home-btn');
+    const logoBtn = document.getElementById('logo-btn');
 
-// 2. TOAST NOTIFICATION
-function showToast(message, type = 'success') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const toast = document.createElement('div');
-  const bgClass = type === 'success' ? 'bg-emerald-600' : 'bg-rose-600';
-  
-  toast.className = `${bgClass} text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 transform transition-all duration-300 translate-y-4 opacity-0 pointer-events-auto`;
-  toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${message}`;
-  
-  container.appendChild(toast);
-  setTimeout(() => toast.classList.remove('translate-y-4', 'opacity-0'), 10);
-  setTimeout(() => {
-    toast.classList.add('opacity-0', 'translate-y-4');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
+    const articlesContainer = document.getElementById('articles-container');
+    const categoryFilter = document.getElementById('category-filter');
+    const searchInput = document.getElementById('search-input');
 
-function calculateReadTime(text) {
-  if (!text) return "1 min o'qish";
-  const words = text.trim().split(/\s+/).length;
-  return `${Math.ceil(words / 150)} min o'qish`;
-}
+    const adminSecretBtn = document.getElementById('admin-secret-btn');
+    const loginModal = document.getElementById('login-modal');
+    const cancelLoginBtn = document.getElementById('cancel-login-btn');
+    const loginForm = document.getElementById('login-form');
+    const adminPassInput = document.getElementById('admin-pass-input');
+    const addArticleForm = document.getElementById('add-article-form');
+    const adminArticlesList = document.getElementById('admin-articles-list');
+    const logoutBtn = document.getElementById('logout-btn');
 
-// 3. SAHIFALAR O'RTASIDA NAVIGATSIYA
-function showPage(pageId) {
-  document.querySelectorAll('.page-view').forEach(v => v.classList.add('hidden'));
-  const targetPage = document.getElementById(pageId);
-  if (targetPage) targetPage.classList.remove('hidden');
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    const articleModal = document.getElementById('article-modal');
+    const closeArticleModalBtn = document.getElementById('close-article-modal');
+    const pollForm = document.getElementById('poll-form');
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  const header = document.getElementById('main-header');
-  const nav = document.getElementById('main-nav');
-
-  if (pageId === 'admin-view') {
-    if (header) header.classList.add('hidden');
-    if (nav) nav.classList.add('hidden');
-  } else {
-    if (header) header.classList.remove('hidden');
-    if (nav) nav.classList.remove('hidden');
-  }
-}
-
-// 4. MAQOLALARNI CHIQARISH
-function renderArticles(filterCat = currentFilter, searchQuery = '') {
-  currentFilter = filterCat;
-  const container = document.getElementById('home-articles-container');
-  if (!container) return;
-
-  const heroMain = document.getElementById('hero-main-card');
-  const heroSide = document.getElementById('hero-side-cards');
-  const sortElem = document.getElementById('sort-select');
-  const sortVal = sortElem ? sortElem.value : 'latest';
-
-  container.innerHTML = '';
-
-  let filtered = articles.filter(a => {
-    if (filterCat === 'Saqlanganlar') return bookmarks.includes(a._id);
-    const matchCat = (filterCat === 'Barchasi') || a.category === filterCat;
-    const matchSearch = a.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        a.content.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
-  });
-
-  if (sortVal === 'popular') {
-    filtered.sort((a, b) => b.likes - a.likes);
-  } else if (sortVal === 'comments') {
-    filtered.sort((a, b) => (b.comments?.length || 0) - (a.comments?.length || 0));
-  }
-
-  const heroSec = document.getElementById('hero-section');
-  if (filtered.length > 0 && filterCat === 'Barchasi' && searchQuery === '' && heroSec) {
-    heroSec.classList.remove('hidden');
-    const main = filtered[0];
-    if (heroMain) {
-      heroMain.onclick = () => openArticle(main._id);
-      heroMain.innerHTML = `
-        <div>
-          <div class="relative h-72 sm:h-96 overflow-hidden">
-            <img src="${main.image}" class="article-img w-full h-full object-cover transition duration-500">
-            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
-            <span class="absolute top-4 left-4 bg-brand-600 text-white text-[11px] font-bold px-3 py-1 rounded-full uppercase">Bosh Yangilik</span>
-            <div class="absolute bottom-4 left-4 right-4 text-white">
-              <p class="text-xs text-brand-300 font-medium mb-1"><i class="fa-regular fa-calendar mr-1"></i> ${main.date}</p>
-              <h2 class="font-gazette text-2xl sm:text-3xl font-bold leading-tight group-hover:text-brand-400 transition">${main.title}</h2>
-            </div>
-          </div>
-          <div class="p-6">
-            <p class="text-slate-600 dark:text-slate-300 text-sm line-clamp-2">${main.content}</p>
-          </div>
-        </div>
-        <div class="px-6 pb-6 flex justify-between items-center text-xs text-slate-400">
-          <span><i class="fa-regular fa-user mr-1"></i> ${main.author}</span>
-          <span class="text-brand-600 dark:text-brand-400 font-bold">Batafsil <i class="fa-solid fa-arrow-right"></i></span>
-        </div>
-      `;
+    // MAVZU HOLATI
+    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+    } else {
+        document.documentElement.classList.remove('dark');
     }
 
-    if (heroSide) {
-      heroSide.innerHTML = '';
-      filtered.slice(1, 3).forEach(item => {
-        heroSide.innerHTML += `
-          <div onclick="openArticle('${item._id}')" class="article-card bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition flex gap-4 items-center group cursor-pointer">
-            <div class="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
-              <img src="${item.image}" class="article-img w-full h-full object-cover transition">
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+    }
+
+    // SAHIFA NAVIGATSIYASI
+    function showHomeView() {
+        homeView.classList.remove('hidden');
+        adminView.classList.add('hidden');
+        searchFilterBar.classList.remove('hidden');
+        goHomeBtn.classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function showAdminView() {
+        homeView.classList.add('hidden');
+        adminView.classList.remove('hidden');
+        searchFilterBar.classList.add('hidden');
+        goHomeBtn.classList.remove('hidden');
+        renderAdminArticles();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    if (logoBtn) logoBtn.addEventListener('click', showHomeView);
+    if (goHomeBtn) goHomeBtn.addEventListener('click', showHomeView);
+
+    // SKELETON LOADERS
+    function renderSkeletonLoaders() {
+        if (!articlesContainer) return;
+        articlesContainer.innerHTML = Array(4).fill(0).map(() => `
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-pulse">
+                <div class="h-48 bg-slate-200 dark:bg-slate-800"></div>
+                <div class="p-5 space-y-3">
+                    <div class="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/3"></div>
+                    <div class="h-6 bg-slate-200 dark:bg-slate-800 rounded w-3/4"></div>
+                    <div class="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full"></div>
+                </div>
             </div>
-            <div>
-              <span class="text-[10px] font-extrabold text-brand-600 uppercase">${item.category}</span>
-              <h3 class="font-bold text-sm line-clamp-2 group-hover:text-brand-500 transition mt-1">${item.title}</h3>
-              <span class="text-[11px] text-slate-400 mt-1 block">${item.date}</span>
-            </div>
-          </div>
+        `).join('');
+    }
+
+    async function fetchArticles() {
+        renderSkeletonLoaders();
+        try {
+            const response = await fetch('/api/articles');
+            if (!response.ok) throw new Error('Yuklashda xatolik');
+            
+            allArticles = await response.json();
+            filterArticles();
+            if (adminToken) renderAdminArticles();
+        } catch (error) {
+            console.error('Xatolik:', error);
+            if (articlesContainer) {
+                articlesContainer.innerHTML = `
+                    <div class="col-span-full py-12 text-center">
+                        <p class="text-rose-500 font-medium mb-2">Ma'lumotlarni yuklab bo'lmadi.</p>
+                        <button onclick="window.location.reload()" class="text-xs bg-rose-100 dark:bg-rose-900/30 text-rose-600 px-3 py-1.5 rounded-lg">Qayta urinish</button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    // MAQOLALARNI CHIZISH
+    function renderArticles(articles) {
+        if (!articlesContainer) return;
+
+        if (articles.length === 0) {
+            articlesContainer.innerHTML = `
+                <div class="col-span-full flex flex-col items-center justify-center py-16 text-center">
+                    <div class="w-16 h-16 bg-slate-200 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl mb-3">
+                        <i class="fa-regular fa-newspaper"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-700 dark:text-slate-200">Maqolalar topilmadi</h3>
+                    <p class="text-xs text-slate-400 mt-1">Qidiruv parametrlarini o'zgartirib ko'ring yoki keyinroq tashrif buyuring.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const likedArticles = JSON.parse(localStorage.getItem('liked_articles') || '[]');
+
+        articlesContainer.innerHTML = articles.map(article => {
+            const isLiked = likedArticles.includes(article.id);
+            return `
+            <article class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-md transition flex flex-col justify-between group">
+                <div>
+                    <div class="relative h-48 overflow-hidden bg-slate-200 dark:bg-slate-800 cursor-pointer" onclick="openArticleModal(${article.id})">
+                        <img src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80'">
+                        <span class="absolute top-3 left-3 bg-brand-600 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-sm">
+                            ${escapeHtml(article.category)}
+                        </span>
+                    </div>
+                    <div class="p-5">
+                        <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+                            <span>✍️ ${escapeHtml(article.author)}</span>
+                            <span>📅 ${formatDate(article.created_at)}</span>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2 leading-snug cursor-pointer hover:text-brand-600 transition" onclick="openArticleModal(${article.id})">
+                            ${escapeHtml(article.title)}
+                        </h3>
+                        <p class="text-slate-600 dark:text-slate-300 text-sm line-clamp-3 mb-4">
+                            ${escapeHtml(article.content)}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                    <button id="like-btn-${article.id}" onclick="handleLike(${article.id})" class="flex items-center gap-1.5 ${isLiked ? 'text-rose-500 font-bold' : 'text-slate-600 dark:text-slate-400'} hover:text-rose-500 transition">
+                        <span>❤️</span>
+                        <span id="like-count-${article.id}" class="font-bold">${article.likes || 0}</span>
+                    </button>
+                    <button onclick="openArticleModal(${article.id})" class="text-brand-600 dark:text-brand-500 font-semibold hover:underline flex items-center gap-1">
+                        Batafsil va Izohlar (${article.comments ? article.comments.length : 0}) <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </button>
+                </div>
+            </article>
         `;
-      });
+        }).join('');
     }
-  } else if (heroSec) {
-    heroSec.classList.add('hidden');
-  }
 
-  if (filtered.length === 0) {
-    container.innerHTML = `<div class="col-span-2 text-center py-12 text-slate-400 text-sm">Maqolalar topilmadi</div>`;
-    return;
-  }
+    // ADMIN MAQOLALAR RO'YXATI
+    function renderAdminArticles() {
+        if (!adminArticlesList) return;
 
-  filtered.forEach(art => {
-    const isBookmarked = bookmarks.includes(art._id);
-    container.innerHTML += `
-      <div class="article-card bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition flex flex-col justify-between group cursor-pointer relative">
-        <div onclick="openArticle('${art._id}')">
-          <div class="h-48 overflow-hidden relative">
-            <img src="${art.image}" class="article-img w-full h-full object-cover transition">
-            <span class="absolute top-3 left-3 bg-slate-900/80 text-white text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-sm uppercase">${art.category}</span>
-          </div>
-          <div class="p-5">
-            <div class="flex items-center justify-between text-[10px] text-slate-400 mb-2">
-              <span><i class="fa-regular fa-clock mr-1"></i> ${calculateReadTime(art.content)}</span>
-              <span><i class="fa-solid fa-heart text-red-500 mr-1"></i> ${art.likes || 0}</span>
+        if (allArticles.length === 0) {
+            adminArticlesList.innerHTML = `<p class="text-slate-500 text-center py-4 text-xs">O'chirish uchun maqolalar mavjud emas.</p>`;
+            return;
+        }
+
+        adminArticlesList.innerHTML = allArticles.map(article => `
+            <div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl gap-4">
+                <div class="flex items-center gap-4 overflow-hidden">
+                    <img src="${escapeHtml(article.image)}" alt="" class="w-12 h-12 rounded-lg object-cover flex-shrink-0" onerror="this.src='https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80'">
+                    <div class="truncate">
+                        <h4 class="font-bold text-sm text-slate-800 dark:text-white truncate">${escapeHtml(article.title)}</h4>
+                        <p class="text-xs text-slate-400">${escapeHtml(article.category)} • ${escapeHtml(article.author)}</p>
+                    </div>
+                </div>
+                <button onclick="deleteArticle(${article.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 flex-shrink-0">
+                    <i class="fa-solid fa-trash"></i> O'chirish
+                </button>
             </div>
-            <h4 class="font-bold text-base group-hover:text-brand-500 transition line-clamp-2 mb-2">${art.title}</h4>
-            <p class="text-slate-500 dark:text-slate-400 text-xs line-clamp-2">${art.content}</p>
-          </div>
-        </div>
-        <div class="px-5 pb-4 pt-2 flex justify-between items-center text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60">
-          <span><i class="fa-regular fa-user mr-1"></i> ${art.author}</span>
-          <button onclick="toggleBookmark('${art._id}', event)" class="p-1 hover:text-amber-500 transition">
-            <i class="${isBookmarked ? 'fa-solid text-amber-500' : 'fa-regular'} fa-bookmark"></i>
-          </button>
-        </div>
-      </div>
-    `;
-  });
+        `).join('');
+    }
 
-  renderAdminTable();
-  updateStats();
-}
+    // FILTR VA QIDIRUV
+    function filterArticles() {
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        const selectedCategory = categoryFilter ? categoryFilter.value : 'all';
 
-function openArticle(id) {
-  currentArticleId = id;
-  const article = articles.find(a => a._id === id);
-  if (!article) return;
+        const filtered = allArticles.filter(article => {
+            const matchesSearch = article.title.toLowerCase().includes(searchTerm) || 
+                                  article.content.toLowerCase().includes(searchTerm);
+            const matchesCategory = selectedCategory === 'all' || article.category === selectedCategory;
+            return matchesSearch && matchesCategory;
+        });
 
-  document.getElementById('article-view-title').textContent = article.title;
-  document.getElementById('article-view-category').textContent = article.category;
-  document.getElementById('article-view-author').textContent = article.author;
-  document.getElementById('article-view-date').textContent = article.date;
-  document.getElementById('article-view-readtime').innerHTML = `<i class="fa-regular fa-clock mr-1"></i> ${calculateReadTime(article.content)}`;
-  document.getElementById('article-view-image').src = article.image;
-  document.getElementById('article-view-content').innerHTML = `<p>${article.content}</p>`;
-  document.getElementById('like-count').textContent = article.likes || 0;
+        renderArticles(filtered);
+    }
 
-  const commentsContainer = document.getElementById('comments-list');
-  commentsContainer.innerHTML = '';
-  document.getElementById('comments-count').textContent = article.comments ? article.comments.length : 0;
+    if (searchInput) searchInput.addEventListener('input', filterArticles);
+    if (categoryFilter) categoryFilter.addEventListener('change', filterArticles);
 
-  if (article.comments) {
-    article.comments.forEach(c => {
-      commentsContainer.innerHTML += `
-        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-          <div class="flex justify-between items-center mb-2">
-            <span class="font-bold text-xs text-slate-900 dark:text-white">${c.name}</span>
-            <span class="text-[10px] text-slate-400">${c.date}</span>
-          </div>
-          <p class="text-xs text-slate-600 dark:text-slate-300">${c.text}</p>
-        </div>
-      `;
+    // ADMIN AUTHENTIFIKATSIYA
+    if (adminSecretBtn) {
+        adminSecretBtn.addEventListener('click', () => {
+            if (adminToken) {
+                showAdminView();
+            } else {
+                loginModal.classList.remove('hidden');
+                adminPassInput.focus();
+            }
+        });
+    }
+
+    if (cancelLoginBtn) {
+        cancelLoginBtn.addEventListener('click', () => {
+            loginModal.classList.add('hidden');
+            adminPassInput.value = '';
+        });
+    }
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = adminPassInput.value;
+
+            try {
+                const res = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    adminToken = data.token;
+                    localStorage.setItem('admin_token', adminToken);
+                    loginModal.classList.add('hidden');
+                    adminPassInput.value = '';
+                    showAdminView();
+                } else {
+                    alert(data.error || 'Parol noto\'g\'ri!');
+                    adminPassInput.value = '';
+                }
+            } catch (err) {
+                alert('Tizimga kirishda xatolik yuz berdi!');
+            }
+        });
+    }
+
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            adminToken = null;
+            localStorage.removeItem('admin_token');
+            showHomeView();
+        });
+    }
+
+    if (closeArticleModalBtn) {
+        closeArticleModalBtn.addEventListener('click', () => {
+            articleModal.classList.add('hidden');
+        });
+    }
+
+    // MODALNI ESCAPE TUGMASI ORQALI YOPISH
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (articleModal && !articleModal.classList.contains('hidden')) {
+                articleModal.classList.add('hidden');
+            }
+            if (loginModal && !loginModal.classList.contains('hidden')) {
+                loginModal.classList.add('hidden');
+            }
+        }
     });
-  }
 
-  showPage('article-view');
+    // MAQOLA QO'SHISH
+    if (addArticleForm) {
+        addArticleForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!adminToken) {
+                alert("Sessiya muddati tugagan. Qaytadan admin sifatida kiring.");
+                return;
+            }
+
+            const newArticle = {
+                title: document.getElementById('title').value,
+                category: document.getElementById('category').value,
+                author: document.getElementById('author').value,
+                image: document.getElementById('image').value,
+                content: document.getElementById('content').value
+            };
+
+            try {
+                const response = await fetch('/api/articles', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify(newArticle)
+                });
+
+                if (response.ok) {
+                    addArticleForm.reset();
+                    alert('Maqola muvaffaqiyatli chop etildi!');
+                    await fetchArticles();
+                    showHomeView();
+                } else {
+                    const errData = await response.json();
+                    alert(errData.error || 'Maqolani qo\'shishda xatolik yuz berdi!');
+                }
+            } catch (error) {
+                console.error('Xatolik:', error);
+            }
+        });
+    }
+
+    // POLL / SO'ROVNOMA
+    async function fetchPoll() {
+        try {
+            const res = await fetch('/api/poll');
+            const pollData = await res.json();
+            renderPoll(pollData);
+        } catch (err) {
+            console.error("So'rovnomani yuklashda xatolik:", err);
+        }
+    }
+
+    function renderPoll(poll) {
+        const pollOptionsElem = document.getElementById('poll-options');
+        const pollSubmitBtn = document.getElementById('poll-submit-btn');
+        if (!pollOptionsElem) return;
+
+        const hasVoted = localStorage.getItem('poll_voted') === 'true';
+        const totalVotes = poll.options ? poll.options.reduce((acc, opt) => acc + opt.votes, 0) : 0;
+
+        pollOptionsElem.innerHTML = poll.options.map(opt => {
+            const percent = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+            if (hasVoted) {
+                return `
+                    <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                        <div class="flex justify-between font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            <span>${escapeHtml(opt.text)}</span>
+                            <span class="font-bold">${percent}%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                            <div class="bg-brand-500 h-2 rounded-full" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                return `
+                    <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition">
+                        <input type="radio" name="poll" value="${opt.id}" class="accent-brand-500" required>
+                        <span class="text-slate-700 dark:text-slate-300 font-medium">${escapeHtml(opt.text)}</span>
+                    </label>
+                `;
+            }
+        }).join('');
+
+        if (hasVoted && pollSubmitBtn) {
+            pollSubmitBtn.classList.add('hidden');
+        }
+    }
+
+    if (pollForm) {
+        pollForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const selectedOption = document.querySelector('input[name="poll"]:checked');
+            if (!selectedOption) return;
+
+            try {
+                const res = await fetch('/api/poll/vote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ optionId: parseInt(selectedOption.value) })
+                });
+
+                if (res.ok) {
+                    const updatedPoll = await res.json();
+                    localStorage.setItem('poll_voted', 'true');
+                    renderPoll(updatedPoll);
+                    alert("Ovozingiz qabul qilindi. Rahmat!");
+                }
+            } catch (err) {
+                console.error("Ovoz berishda xatolik:", err);
+            }
+        });
+    }
+
+    fetchArticles();
+    fetchPoll();
+});
+
+// GLOBAL FUNKSIYALAR
+function openArticleModal(id) {
+    const article = allArticles.find(a => a.id === id);
+    if (!article) return;
+
+    const modalContent = document.getElementById('modal-article-content');
+    const articleModal = document.getElementById('article-modal');
+
+    modalContent.innerHTML = `
+        <div class="relative h-64 sm:h-80 w-full bg-slate-200 dark:bg-slate-800">
+            <img src="${escapeHtml(article.image)}" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80'">
+            <span class="absolute bottom-4 left-4 bg-brand-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-md">
+                ${escapeHtml(article.category)}
+            </span>
+        </div>
+        <div class="p-6 sm:p-8 space-y-6">
+            <div>
+                <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+                    <span>✍️ ${escapeHtml(article.author)}</span>
+                    <span>📅 ${formatDate(article.created_at)}</span>
+                </div>
+                <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
+                    ${escapeHtml(article.title)}
+                </h2>
+            </div>
+
+            <p class="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-line">
+                ${escapeHtml(article.content)}
+            </p>
+
+            <div class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                <h3 class="font-bold text-slate-900 dark:text-white mb-4 text-sm flex items-center gap-2">
+                    <i class="fa-regular fa-comments text-brand-500"></i> Izohlar (${article.comments ? article.comments.length : 0})
+                </h3>
+
+                <div class="space-y-3 mb-6 max-h-48 overflow-y-auto pr-2">
+                    ${(article.comments && article.comments.length > 0) 
+                        ? article.comments.map(c => `
+                            <div class="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-xs">
+                                <span class="font-bold text-slate-800 dark:text-slate-200 block mb-0.5">${escapeHtml(c.name)}</span>
+                                <span class="text-slate-600 dark:text-slate-300">${escapeHtml(c.text)}</span>
+                            </div>
+                        `).join('') 
+                        : '<p class="text-slate-400 italic text-xs text-center py-2">Hali izohlar yo\'q. Birinchi bo\'lib izoh qoldiring!</p>'
+                    }
+                </div>
+
+                <form onsubmit="handleComment(event, ${article.id})" class="space-y-2">
+                    <input type="text" id="modal-comment-name-${article.id}" placeholder="Ismingiz" required class="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none">
+                    <div class="flex gap-2">
+                        <input type="text" id="modal-comment-text-${article.id}" placeholder="Izohingizni yozing..." required class="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none">
+                        <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-xl text-xs font-semibold transition flex-shrink-0">
+                            Yuborish
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    articleModal.classList.remove('hidden');
 }
 
-function toggleBookmark(id, event) {
-  if (event) event.stopPropagation();
-  const idx = bookmarks.indexOf(id);
-  if (idx > -1) {
-    bookmarks.splice(idx, 1);
-    showToast("Xatcho'plardan olib tashlandi");
-  } else {
-    bookmarks.push(id);
-    showToast("Saqlanganlarga qo'shildi");
-  }
-  localStorage.setItem('sg_bookmarks', JSON.stringify(bookmarks));
-  renderArticles();
+async function handleLike(id) {
+    let likedArticles = JSON.parse(localStorage.getItem('liked_articles') || '[]');
+
+    if (likedArticles.includes(id)) {
+        alert("Siz ushbu maqolaga allaqachon layk bosgansiz!");
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/articles/${id}/like`, { method: 'POST' });
+        if (response.ok) {
+            const updatedArticle = await response.json();
+            
+            const likeCountElem = document.getElementById(`like-count-${id}`);
+            if (likeCountElem) {
+                likeCountElem.textContent = updatedArticle.likes;
+            }
+
+            const articleIndex = allArticles.findIndex(a => a.id === id);
+            if (articleIndex !== -1) {
+                allArticles[articleIndex].likes = updatedArticle.likes;
+            }
+
+            likedArticles.push(id);
+            localStorage.setItem('liked_articles', JSON.stringify(likedArticles));
+
+            const likeBtn = document.getElementById(`like-btn-${id}`);
+            if (likeBtn) {
+                likeBtn.classList.remove('text-slate-600', 'dark:text-slate-400');
+                likeBtn.classList.add('text-rose-500', 'font-bold');
+            }
+        }
+    } catch (error) {
+        console.error('Layk bosishda xatolik:', error);
+    }
+}
+
+async function handleComment(event, id) {
+    event.preventDefault();
+    const nameInput = document.getElementById(`modal-comment-name-${id}`);
+    const textInput = document.getElementById(`modal-comment-text-${id}`);
+
+    if (!nameInput || !textInput) return;
+
+    const commentData = { name: nameInput.value, text: textInput.value };
+
+    try {
+        const response = await fetch(`/api/articles/${id}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(commentData)
+        });
+
+        if (response.ok) {
+            const updatedArticle = await response.json();
+            const articleIndex = allArticles.findIndex(a => a.id === id);
+            if (articleIndex !== -1) {
+                allArticles[articleIndex] = updatedArticle;
+            }
+            openArticleModal(id);
+        }
+    } catch (error) {
+        console.error('Izoh yuborishda xatolik:', error);
+    }
 }
 
 async function deleteArticle(id) {
-  if (confirm("Ushbu maqolani o'chirmoqchimisiz?")) {
+    if (!adminToken) {
+        alert("Ruxsat yo'q. Avval admin sifatida kiring.");
+        return;
+    }
+
+    if (!confirm("Haqiqatdan ham ushbu maqolani o'chirmoqchimisiz?")) return;
+
     try {
-      await fetch(`/api/articles/${id}`, { method: 'DELETE' });
-      fetchArticles();
-      showToast("Maqola o'chirildi", "error");
-    } catch (err) {
-      showToast("O'chirishda xatolik", "error");
-    }
-  }
-}
-
-function renderAdminTable() {
-  const tbody = document.getElementById('articles-table-body');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  articles.forEach(art => {
-    tbody.innerHTML += `
-      <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
-        <td class="p-4 font-semibold text-slate-900 dark:text-white max-w-xs truncate">${art.title}</td>
-        <td class="p-4"><span class="bg-brand-500/10 text-brand-500 font-bold px-2.5 py-1 rounded-md">${art.category}</span></td>
-        <td class="p-4 text-slate-500 dark:text-slate-400">${art.author}</td>
-        <td class="p-4 text-slate-400">${art.date}</td>
-        <td class="p-4 text-right space-x-2">
-          <button onclick="openArticle('${art._id}')" class="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><i class="fa-solid fa-eye"></i></button>
-          <button onclick="deleteArticle('${art._id}')" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><i class="fa-solid fa-trash"></i></button>
-        </td>
-      </tr>
-    `;
-  });
-}
-
-function updateStats() {
-  const total = document.getElementById('stat-total-articles');
-  const comments = document.getElementById('stat-total-comments');
-  if (total) total.textContent = articles.length;
-  if (comments) {
-    const totalComments = articles.reduce((acc, curr) => acc + (curr.comments ? curr.comments.length : 0), 0);
-    comments.textContent = totalComments;
-  }
-}
-
-// YASHIRIN ADMIN PANELGA KIRISH VA KATEGORIYA EVENTLARI
-function initCategoryButtons() {
-  const navContainer = document.getElementById('main-nav');
-  if (navContainer) {
-    const buttons = navContainer.querySelectorAll('button');
-    buttons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const catName = btn.textContent.trim();
-        renderArticles(catName);
-      });
-    });
-  }
-}
-
-function initSecretAdminAccess() {
-  // 1-usul: Logotipni 3 marta tez bosish
-  const logoHeader = document.querySelector('header h1');
-  let clickCount = 0;
-  let clickTimer = null;
-
-  if (logoHeader) {
-    logoHeader.style.cursor = 'pointer';
-    logoHeader.addEventListener('click', () => {
-      clickCount++;
-      clearTimeout(clickTimer);
-      if (clickCount === 3) {
-        showPage('admin-view');
-        showToast("Secret Panel: Admin rejimiga o'tildi!");
-        clickCount = 0;
-      } else {
-        clickTimer = setTimeout(() => { clickCount = 0; }, 1000);
-      }
-    });
-  }
-
-  // 2-usul: Ctrl + Shift + A birgalikda bosish
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
-      e.preventDefault();
-      showPage('admin-view');
-      showToast("Secret Combo: Admin rejimiga o'tildi!");
-    }
-  });
-}
-
-// INIZIALIZATSIYA
-document.addEventListener('DOMContentLoaded', () => {
-  fetchArticles();
-  initCategoryButtons();
-  initSecretAdminAccess();
-
-  const themeToggle = document.getElementById('theme-toggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      document.documentElement.classList.toggle('dark');
-    });
-  }
-
-  const likeBtn = document.getElementById('like-btn');
-  if (likeBtn) {
-    likeBtn.addEventListener('click', async () => {
-      if (!currentArticleId) return;
-      try {
-        const res = await fetch(`/api/articles/${currentArticleId}/like`, { method: 'POST' });
-        const updated = await res.json();
-        document.getElementById('like-count').textContent = updated.likes;
-        fetchArticles();
-        showToast("Menga yoqdi!");
-      } catch (err) {
-        showToast("Xatolik yuz berdi", "error");
-      }
-    });
-  }
-
-  const commentForm = document.getElementById('comment-form');
-  if (commentForm) {
-    commentForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('comment-name').value;
-      const text = document.getElementById('comment-text').value;
-
-      try {
-        await fetch(`/api/articles/${currentArticleId}/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, text })
+        const response = await fetch(`/api/articles/${id}`, { 
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${adminToken}`
+            }
         });
-        commentForm.reset();
-        await fetchArticles();
-        openArticle(currentArticleId);
-        showToast("Izohingiz saqlandi!");
-      } catch (err) {
-        showToast("Izoh yuborishda xatolik", "error");
-      }
-    });
-  }
 
-  const addArticleForm = document.getElementById('add-article-form');
-  if (addArticleForm) {
-    addArticleForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const newArt = {
-        title: document.getElementById('article-title').value,
-        category: document.getElementById('article-category').value,
-        author: document.getElementById('article-author').value,
-        image: document.getElementById('article-image').value,
-        content: document.getElementById('article-content').value,
-      };
+        if (response.ok) {
+            allArticles = allArticles.filter(a => a.id !== id);
+            const articlesContainer = document.getElementById('articles-container');
+            const adminArticlesList = document.getElementById('admin-articles-list');
+            
+            if (articlesContainer) {
+                const articleElem = articlesContainer.querySelector(`[onclick*="${id}"]`)?.closest('article');
+                if (articleElem) articleElem.remove();
+            }
+            if (adminArticlesList) {
+                const adminElem = adminArticlesList.querySelector(`[onclick="deleteArticle(${id})"]`)?.closest('div');
+                if (adminElem) adminElem.remove();
+            }
+        } else {
+            alert("O'chirishda xatolik yuz berdi!");
+        }
+    } catch (error) {
+        console.error("O'chirishda xatolik:", error);
+    }
+}
 
-      try {
-        await fetch('/api/articles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newArt)
-        });
-        addArticleForm.reset();
-        fetchArticles();
-        showToast("Yangi maqola saqlandi!");
-      } catch (err) {
-        showToast("Maqola qo'shishda xatolik", "error");
-      }
-    });
-  }
+function formatDate(isoString) {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
-  const searchInput = document.getElementById('search-input');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      renderArticles(currentFilter, e.target.value);
-    });
-  }
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#039;");
+}
 
-  const sortSelect = document.getElementById('sort-select');
-  if (sortSelect) {
-    sortSelect.addEventListener('change', () => {
-      renderArticles();
-    });
-  }
-});
+function startCountdown() {
+    let targetDate = localStorage.getItem('countdown_target');
+    if (!targetDate) {
+        targetDate = new Date().getTime() + (5 * 24 * 60 * 60 * 1000);
+        localStorage.setItem('countdown_target', targetDate);
+    } else {
+        targetDate = parseInt(targetDate);
+    }
+
+    const timerInterval = setInterval(() => {
+        const now = new Date().getTime();
+        const distance = targetDate - now;
+
+        const dElem = document.getElementById('timer-days');
+        const hElem = document.getElementById('timer-hours');
+        const mElem = document.getElementById('timer-mins');
+
+        if (distance < 0) {
+            clearInterval(timerInterval);
+            if (dElem) dElem.textContent = '00';
+            if (hElem) hElem.textContent = '00';
+            if (mElem) mElem.textContent = '00';
+            return;
+        }
+
+        const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+
+        if (dElem) dElem.textContent = String(days).padStart(2, '0');
+        if (hElem) hElem.textContent = String(hours).padStart(2, '0');
+        if (mElem) mElem.textContent = String(minutes).padStart(2, '0');
+    }, 1000);
+}
+
+startCountdown();

@@ -1,0 +1,20 @@
+{
+  "question": "Maktabimizda qaysi yangi to'garak ochilishini xohlaysiz?",
+  "options": [
+    {
+      "id": 1,
+      "text": "Robotics & AI",
+      "votes": 0
+    },
+    {
+      "id": 2,
+      "text": "Shaxmat va Mantiq",
+      "votes": 0
+    },
+    {
+      "id": 3,
+      "text": "Debat va Jurnalistika",
+      "votes": 0
+    }
+  ]
+}
