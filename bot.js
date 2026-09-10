@@ -9,66 +9,98 @@ let bot = null;
 function initBot() {
     const token = process.env.BOT_TOKEN;
 
-    if (!token) {
-        console.warn("⚠️ BOT_TOKEN topilmadi. Telegram bot ishga tushirilmadi.");
+    if (!token || token.trim() === '' || token.includes('BotFather')) {
+        console.warn("⚠️ BOT_TOKEN topilmadi yoki xato kiritilgan. Telegram bot faollashtirilmadi.");
         return null;
     }
 
-    bot = new TelegramBot(token, { polling: true });
+    try {
+        // Bot obyektini yaratish
+        bot = new TelegramBot(token, { polling: true });
 
-    // /start buyrug'i
-    bot.onText(/\/start/, (msg) => {
-        const chatId = msg.chat.id;
-        bot.sendMessage(
-            chatId,
-            `Xush kelibsiz, ${msg.from.first_name}!\n\n` +
-            `📰 *School Gazette* maktab gazetasi botiga xush kelibsiz.\n\n` +
-            `Buyruqlar:\n` +
-            ` /latest - Eng so'nggi maqolani o'qish\n` +
-            ` /help - Yordam`,
-            { parse_mode: 'Markdown' }
-        );
-    });
+        // /start buyrug'i
+        bot.onText(/\/start/, (msg) => {
+            const chatId = msg.chat.id;
+            const firstName = msg.from?.first_name || 'Foydalanuvchi';
+            
+            bot.sendMessage(
+                chatId,
+                `Xush kelibsiz, *${escapeMarkdown(firstName)}*!\n\n` +
+                `📰 *School Gazette* maktab gazetasi botiga xush kelibsiz.\n\n` +
+                `📌 *Mavjud buyruqlar:*\n` +
+                `• /latest - Eng so'nggi maqolani o'qish\n` +
+                `• /help - Yordam va ma'lumot`,
+                { parse_mode: 'Markdown' }
+            );
+        });
 
-    // /latest buyrug'i
-    bot.onText(/\/latest/, async (msg) => {
-        const chatId = msg.chat.id;
-        try {
-            const data = await fs.readFile(DATA_FILE, 'utf8');
-            const articles = JSON.parse(data);
+        // /help buyrug'i
+        bot.onText(/\/help/, (msg) => {
+            const chatId = msg.chat.id;
+            bot.sendMessage(
+                chatId,
+                `ℹ️ *School Gazette Bot Yordam*\n\n` +
+                `Ushbu bot orqali maktabimizdagi eng so'nggi yangilik va maqolalardan xabardor bo'lishingiz mumkin.`,
+                { parse_mode: 'Markdown' }
+            );
+        });
 
-            if (!articles || articles.length === 0) {
-                return bot.sendMessage(chatId, "Hozircha hech qanday maqola chop etilmagan.");
+        // /latest buyrug'i
+        bot.onText(/\/latest/, async (msg) => {
+            const chatId = msg.chat.id;
+            try {
+                const data = await fs.readFile(DATA_FILE, 'utf8');
+                const articles = JSON.parse(data);
+
+                if (!articles || articles.length === 0) {
+                    return bot.sendMessage(chatId, "📭 Hozircha hech qanday maqola chop etilmagan.");
+                }
+
+                const latest = articles[0];
+                const caption = `📌 *${escapeMarkdown(latest.title)}*\n\n` +
+                                `✍️ *Muallif:* ${escapeMarkdown(latest.author)}\n` +
+                                `📂 *Kategoriya:* ${escapeMarkdown(latest.category)}\n\n` +
+                                `${escapeMarkdown(latest.content.substring(0, 300))}...`;
+
+                if (latest.image) {
+                    await bot.sendPhoto(chatId, latest.image, { caption, parse_mode: 'Markdown' });
+                } else {
+                    await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
+                }
+            } catch (err) {
+                console.error("Bot /latest xatolik:", err);
+                bot.sendMessage(chatId, "⚠️ Maqolani yuklashda xatolik yuz berdi.");
             }
+        });
 
-            const latest = articles[0];
-            const caption = `📌 *${latest.title}*\n\n` +
-                            `✍️ Muallif: ${latest.author}\n` +
-                            `📂 Kategoriya: ${latest.category}\n\n` +
-                            `${latest.content.substring(0, 300)}...`;
+        // Polling xatolarini ushlash
+        bot.on('polling_error', (error) => {
+            console.error(`[Telegram Bot Polling Error]: ${error.code} - ${error.message}`);
+        });
 
-            if (latest.image) {
-                await bot.sendPhoto(chatId, latest.image, { caption, parse_mode: 'Markdown' });
-            } else {
-                await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
-            }
-        } catch (err) {
-            bot.sendMessage(chatId, "Maqolani yuklashda xatolik yuz berdi.");
-        }
-    });
+        console.log("🤖 Telegram Bot muvaffaqiyatli ishga tushdi!");
+        return bot;
 
-    console.log("🤖 Telegram Bot muvaffaqiyatli ishga tushdi.");
-    return bot;
+    } catch (error) {
+        console.error("Telegram botni initsializatsiya qilishda xatolik:", error.message);
+        return null;
+    }
 }
 
-// Telegram kanaliga yangi maqola post qilish funksiyasi
+// Telegram kanaliga yoki guruhga yangi maqola post qilish funksiyasi
 async function notifyNewArticle(channelId, article) {
-    if (!bot) return;
+    if (!bot) {
+        console.warn("⚠️ Bot faol emas, xabar yuborilmadi.");
+        return;
+    }
 
-    const message = `📣 *Yangi Maqola!*\n\n` +
-                    `📰 *${article.title}*\n` +
-                    `✍️ Muallif: ${article.author}\n\n` +
-                    `${article.content.substring(0, 200)}...`;
+    if (!channelId) return;
+
+    const message = `📣 *YANGI MAQOLA CHOP ETILDI!*\n\n` +
+                    `📰 *${escapeMarkdown(article.title)}*\n\n` +
+                    `✍️ *Muallif:* ${escapeMarkdown(article.author)}\n` +
+                    `📂 *Kategoriya:* ${escapeMarkdown(article.category)}\n\n` +
+                    `${escapeMarkdown(article.content.substring(0, 250))}...`;
 
     try {
         if (article.image) {
@@ -76,9 +108,16 @@ async function notifyNewArticle(channelId, article) {
         } else {
             await bot.sendMessage(channelId, message, { parse_mode: 'Markdown' });
         }
+        console.log(`✅ Telegram kanalga (${channelId}) xabar muvaffaqiyatli yuborildi.`);
     } catch (err) {
-        console.error("Telegram kanalga yuborishda xatolik:", err.message);
+        console.error("Telegram kanalga xabar yuborishda xatolik:", err.message);
     }
+}
+
+// Markdown belgilarni xavfsiz qilish uchun yordamchi funksiya
+function escapeMarkdown(text) {
+    if (!text) return '';
+    return text.replace(/[_*`\[\]]/g, '\\$&');
 }
 
 module.exports = { initBot, notifyNewArticle };
