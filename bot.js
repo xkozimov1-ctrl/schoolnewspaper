@@ -1,5 +1,8 @@
-const TelegramBotRaw = require('node-telegram-bot-api');
-const TelegramBot = TelegramBotRaw.default || TelegramBotRaw;
+const TelegramBotModule = require('node-telegram-bot-api');
+// Node.js versiyalari va import xatolarini (TypeError) to'liq hal qilish uchun xavfsiz konstruktor
+const TelegramBot = typeof TelegramBotModule === 'function' 
+    ? TelegramBotModule 
+    : (TelegramBotModule.default || TelegramBotModule);
 
 const path = require('path');
 const fs = require('fs').promises;
@@ -17,38 +20,50 @@ function initBot() {
     }
 
     try {
-        // Bot obyektini yaratish
         bot = new TelegramBot(token, { polling: true });
 
-        // /start buyrug'i
+        // /start buyrug'i va menyu tugmalarini chiqarish
         bot.onText(/\/start/, (msg) => {
             const chatId = msg.chat.id;
             const firstName = msg.from?.first_name || 'Foydalanuvchi';
             
+            // Tugmalar menyusi
+            const options = {
+                reply_markup: {
+                    keyboard: [
+                        [{ text: "📰 So'nggi maqola" }],
+                        [{ text: "ℹ️ Yordam" }]
+                    ],
+                    resize_keyboard: true
+                },
+                parse_mode: 'Markdown'
+            };
+
             bot.sendMessage(
                 chatId,
                 `Xush kelibsiz, *${escapeMarkdown(firstName)}*!\n\n` +
                 `📰 *School Gazette* maktab gazetasi botiga xush kelibsiz.\n\n` +
-                `📌 *Mavjud buyruqlar:*\n` +
-                `• /latest - Eng so'nggi maqolani o'qish\n` +
-                `• /help - Yordam va ma'lumot`,
-                { parse_mode: 'Markdown' }
+                `Pastdagi menyu tugmalari orqali yoki buyruqlar yordamida botdan foydalanishingiz mumkin:`,
+                options
             );
         });
 
-        // /help buyrug'i
-        bot.onText(/\/help/, (msg) => {
+        // /help buyrug'i yoki "ℹ️ Yordam" tugmasi
+        bot.onText(/\/help|ℹ️ Yordam/, (msg) => {
             const chatId = msg.chat.id;
             bot.sendMessage(
                 chatId,
                 `ℹ️ *School Gazette Bot Yordam*\n\n` +
-                `Ushbu bot orqali maktabimizdagi eng so'nggi yangilik va maqolalardan xabardor bo'lishingiz mumkin.`,
+                `Ushbu bot maktabimiz gazetasining rasmiy yordamchisi hisoblanadi.\n\n` +
+                `📌 *Imkoniyatlar:*\n` +
+                `• *So'nggi maqola:* Saytga joylangan eng oxirgi maqolani o'qish\n` +
+                `• *Kanalga xabar:* Admin saytdan yangi maqola chiqarganda avtomatik Telegram kanalga post joylash`,
                 { parse_mode: 'Markdown' }
             );
         });
 
-        // /latest buyrug'i
-        bot.onText(/\/latest/, async (msg) => {
+        // /latest buyrug'i yoki "📰 So'nggi maqola" tugmasi
+        bot.onText(/\/latest|📰 So'nggi maqola/, async (msg) => {
             const chatId = msg.chat.id;
             try {
                 const data = await fs.readFile(DATA_FILE, 'utf8');
