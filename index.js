@@ -5,20 +5,21 @@ const path = require('path');
 const fs = require('fs').promises;
 const existsSync = require('fs').existsSync;
 
+// BOT MODULINI ULANISH
+const { initBot, notifyNewArticle } = require('./bot');
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 const DATA_FILE = path.join(__dirname, 'articles.json');
 const POLL_FILE = path.join(__dirname, 'poll.json');
 
-// Parol va tokenlar endi to'g'ridan-to'g'ri .env faylidan olinadi
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Boshlang'ich JSON fayllarni asinxron yaratish
 async function initDB() {
     try {
         if (!existsSync(DATA_FILE)) {
@@ -53,7 +54,6 @@ async function writeJSON(filePath, data) {
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// Admin Authentifikatsiya Middleware
 function requireAdmin(req, res, next) {
     const authHeader = req.headers['authorization'];
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -65,7 +65,7 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: "Ruxsat etilmagan! Admin sifatida kiring." });
 }
 
-// Admin Login
+// API ENDPOINTS
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
     if (password && password === ADMIN_SECRET) {
@@ -74,7 +74,6 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error: "Noto'g'ri parol!" });
 });
 
-// Barcha maqolalarni olish
 app.get('/api/articles', async (req, res) => {
     try {
         const articles = await readJSON(DATA_FILE);
@@ -84,10 +83,10 @@ app.get('/api/articles', async (req, res) => {
     }
 });
 
-// Yangi maqola chop etish (Faqat Admin)
+// Yangi maqola yaratish
 app.post('/api/articles', requireAdmin, async (req, res) => {
     try {
-        const { title, category, author, image, content } = req.body;
+        const { title, category, author, image, content, telegramChannelId } = req.body;
 
         if (!title || !category || !author || !image || !content) {
             return res.status(400).json({ error: "Barcha maydonlarni to'ldiring!" });
@@ -108,13 +107,18 @@ app.post('/api/articles', requireAdmin, async (req, res) => {
 
         articles.unshift(newArticle);
         await writeJSON(DATA_FILE, articles);
+
+        // Agarda kanal ID berilgan bo'lsa, avtomatik xabar yuboriladi
+        if (telegramChannelId) {
+            notifyNewArticle(telegramChannelId, newArticle);
+        }
+
         res.status(201).json(newArticle);
     } catch (err) {
         res.status(500).json({ error: "Maqola saqlashda xatolik." });
     }
 });
 
-// Maqolaga layk bosish
 app.post('/api/articles/:id/like', async (req, res) => {
     try {
         const articleId = parseInt(req.params.id);
@@ -133,7 +137,6 @@ app.post('/api/articles/:id/like', async (req, res) => {
     }
 });
 
-// Maqolaga izoh qoldirish
 app.post('/api/articles/:id/comments', async (req, res) => {
     try {
         const articleId = parseInt(req.params.id);
@@ -167,7 +170,6 @@ app.post('/api/articles/:id/comments', async (req, res) => {
     }
 });
 
-// Maqolani o'chirish (Faqat Admin)
 app.delete('/api/articles/:id', requireAdmin, async (req, res) => {
     try {
         const articleId = parseInt(req.params.id);
@@ -187,7 +189,6 @@ app.delete('/api/articles/:id', requireAdmin, async (req, res) => {
     }
 });
 
-// Poll: Ma'lumotlarni olish
 app.get('/api/poll', async (req, res) => {
     try {
         const poll = await readJSON(POLL_FILE);
@@ -197,7 +198,6 @@ app.get('/api/poll', async (req, res) => {
     }
 });
 
-// Poll: Ovoz berish
 app.post('/api/poll/vote', async (req, res) => {
     try {
         const { optionId } = req.body;
@@ -216,14 +216,14 @@ app.post('/api/poll/vote', async (req, res) => {
     }
 });
 
-// SPA qo'llab-quvvatlash
 app.get('/*splat', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Serverni ishga tushirish
+// SERVER VA BOTNI ISHGA TUSHIRISH
 initDB().then(() => {
     app.listen(PORT, () => {
         console.log(`Server faol: http://localhost:${PORT}`);
+        initBot(); // Botni ishga tushirish
     });
 });
