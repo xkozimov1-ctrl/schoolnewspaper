@@ -1,9 +1,4 @@
-const TelegramBotModule = require('node-telegram-bot-api');
-// Node.js versiyalari va import xatolarini (TypeError) to'liq hal qilish uchun xavfsiz konstruktor
-const TelegramBot = typeof TelegramBotModule === 'function' 
-    ? TelegramBotModule 
-    : (TelegramBotModule.default || TelegramBotModule);
-
+const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -20,14 +15,22 @@ function initBot() {
     }
 
     try {
-        bot = new TelegramBot(token, { polling: true });
+        // node-telegram-bot-api v2.x da konstruktorni to'g'ri olish tekshiruvi:
+        const BotClass = typeof TelegramBot === 'function' 
+            ? TelegramBot 
+            : (TelegramBot.TelegramBot || TelegramBot.default);
 
-        // /start buyrug'i va menyu tugmalarini chiqarish
+        if (!BotClass || typeof BotClass !== 'function') {
+            throw new Error("TelegramBot konstruktori topilmadi. Kutubxona yuklanishida xatolik.");
+        }
+
+        bot = new BotClass(token, { polling: true });
+
+        // /start buyrug'i va menyu tugmalari
         bot.onText(/\/start/, (msg) => {
             const chatId = msg.chat.id;
             const firstName = msg.from?.first_name || 'Foydalanuvchi';
             
-            // Tugmalar menyusi
             const options = {
                 reply_markup: {
                     keyboard: [
@@ -48,7 +51,7 @@ function initBot() {
             );
         });
 
-        // /help buyrug'i yoki "ℹ️ Yordam" tugmasi
+        // /help buyrug'i va "ℹ️ Yordam" tugmasi
         bot.onText(/\/help|ℹ️ Yordam/, (msg) => {
             const chatId = msg.chat.id;
             bot.sendMessage(
@@ -62,7 +65,7 @@ function initBot() {
             );
         });
 
-        // /latest buyrug'i yoki "📰 So'nggi maqola" tugmasi
+        // /latest buyrug'i va "📰 So'nggi maqola" tugmasi
         bot.onText(/\/latest|📰 So'nggi maqola/, async (msg) => {
             const chatId = msg.chat.id;
             try {
@@ -90,7 +93,6 @@ function initBot() {
             }
         });
 
-        // Polling xatolarini ushlash
         bot.on('polling_error', (error) => {
             console.error(`[Telegram Bot Polling Error]: ${error.code} - ${error.message}`);
         });
@@ -104,7 +106,6 @@ function initBot() {
     }
 }
 
-// Telegram kanaliga yoki guruhga yangi maqola post qilish funksiyasi
 async function notifyNewArticle(channelId, article) {
     if (!bot) {
         console.warn("⚠️ Bot faol emas, xabar yuborilmadi.");
@@ -131,7 +132,6 @@ async function notifyNewArticle(channelId, article) {
     }
 }
 
-// Markdown belgilarni xavfsiz qilish uchun yordamchi funksiya
 function escapeMarkdown(text) {
     if (!text) return '';
     return text.replace(/[_*`\[\]]/g, '\\$&');
