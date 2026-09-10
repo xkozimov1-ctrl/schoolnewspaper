@@ -1,4 +1,6 @@
-const TelegramBot = require('node-telegram-bot-api');
+const TelegramBotRaw = require('node-telegram-bot-api');
+const TelegramBot = TelegramBotRaw.default || TelegramBotRaw;
+
 const path = require('path');
 const fs = require('fs').promises;
 
